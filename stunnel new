@@ -25,6 +25,9 @@ create_user() {
         # Install stunnel if not installed
         install_stunnel
 
+        # Create Stunnel configuration directory if it doesn't exist
+        mkdir -p /etc/stunnel
+
         # Configure Stunnel (certificate + config)
         cat <<EOF > /etc/stunnel/stunnel.conf
 client = no
@@ -34,12 +37,18 @@ connect = 22
 cert = /etc/stunnel/stunnel.pem
 EOF
 
+        # Generate a self-signed SSL certificate for Stunnel
         openssl req -new -x509 -days 365 -nodes \
             -out /etc/stunnel/stunnel.pem \
             -keyout /etc/stunnel/stunnel.pem \
             -subj "/CN=localhost"
 
-        # Skip enabling/restarting stunnel service
+        # Set correct permissions for the Stunnel configuration and certificate
+        chmod 600 /etc/stunnel/stunnel.pem
+        chmod 644 /etc/stunnel/stunnel.conf
+
+        # Start and enable stunnel to ensure it runs after reboot
+        systemctl enable --now stunnel4
 
         # Generate Ed25519 SSH keypair
         mkdir -p /home/"$u"/.ssh
