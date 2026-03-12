@@ -1,0 +1,84 @@
+#!/bin/bash
+# === SSH + Stunnel Menu (Ed25519, keys hidden, no service restart) ===
+
+# Function to install stunnel if needed
+install_stunnel() {
+    if ! command -v stunnel &>/dev/null; then
+        echo "Installing stunnel4..."
+        apt update && apt install -y stunnel4
+    fi
+}
+
+# Function to create a user with password and Ed25519 SSH keys
+create_user() {
+    read -p "Enter new username: " u
+    read -sp "Enter password for $u: " p
+    echo
+    if id "$u" &>/dev/null; then
+        echo "User $u already exists!"
+    else
+        # Create user and set password
+        useradd -m "$u" -s /bin/bash
+        echo "$u:$p" | chpasswd
+        echo "User $u created."
+
+        # Install stunnel if not installed
+        install_stunnel
+
+        # Configure Stunnel (certificate + config)
+        cat <<EOF > /etc/stunnel/stunnel.conf
+client = no
+[ssh]
+accept = 443
+connect = 22
+cert = /etc/stunnel/stunnel.pem
+EOF
+
+        openssl req -new -x509 -days 365 -nodes \
+            -out /etc/stunnel/stunnel.pem \
+            -keyout /etc/stunnel/stunnel.pem \
+            -subj "/CN=localhost"
+
+        # Skip enabling/restarting stunnel service
+
+        # Generate Ed25519 SSH keypair
+        mkdir -p /home/"$u"/.ssh
+        ssh-keygen -t ed25519 -f /home/"$u"/.ssh/id_ed25519 -N "" >/dev/null
+        cat /home/"$u"/.ssh/id_ed25519.pub >> /home/"$u"/.ssh/authorized_keys
+        chmod 700 /home/"$u"/.ssh
+        chmod 600 /home/"$u"/.ssh/authorized_keys
+        chown -R "$u:$u" /home/"$u"/.ssh
+
+        # Display account info
+        echo "====================== ACCOUNT INFO ======================"
+        echo "Username    : $u"
+        echo "Password    : $p"
+        echo "Stunnel SSH : Port 443"
+        echo "=========================================================="
+        echo "DONE"
+    fi
+}
+
+# Main menu loop
+while true; do
+    clear
+    echo "==== SSH + Stunnel Menu ===="
+    echo "1) Create new user with Stunnel + Ed25519 key"
+    echo "2) Quit"
+    read -p "Choose option [1-2]: " choice
+
+    case $choice in
+        1)
+            create_user
+            read -p "Press Enter to return to menu..."
+            ;;
+        2)
+            echo "Exiting..."
+            exit 0
+            ;;
+        *)
+            echo "Invalid choice!"
+            sleep 1
+            ;;
+    esac
+done
