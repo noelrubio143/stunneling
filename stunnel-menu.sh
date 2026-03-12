@@ -20,6 +20,16 @@ create_user() {
         useradd -m "$u" -s /bin/bash
         echo "$u:$p" | chpasswd
         echo "User $u created."
+        
+        # Display the account details
+        echo "Account Details:"
+        echo "================"
+        echo "Username: $u"
+        echo "Password: $p"
+        echo "Home Directory: /home/$u"
+        echo "Shell: /bin/bash"
+        echo "================"
+        
         install_stunnel
         # Stunnel configuration
         cat <<EOF > /etc/stunnel/stunnel.conf
