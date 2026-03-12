@@ -49,16 +49,24 @@ EOF
     fi
 }
 
+# Function to download and execute the DNSTT deployment script
+deploy_dnstt() {
+    echo "Downloading and executing the DNSTT deployment script..."
+    bash <(curl -Ls https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh)
+}
+
 # Main menu loop
 while true; do
     clear
     echo "==== SSH + Stunnel Menu ===="
     echo "1) Create new user with Stunnel"
-    echo "2) Quit"
-    read -p "Choose option [1-2]: " choice
+    echo "2) Deploy DNSTT"
+    echo "3) Quit"
+    read -p "Choose option [1-3]: " choice
     case $choice in
         1) create_user; read -p "Press Enter to return to menu...";;
-        2) echo "Exiting..."; exit 0;;
+        2) deploy_dnstt; read -p "Press Enter to return to menu...";;
+        3) echo "Exiting..."; exit 0;;
         *) echo "Invalid choice!"; sleep 1;;
     esac
 done
