@@ -51,11 +51,14 @@ EOF
 
         # Display account info
         echo "====================== ACCOUNT INFO ======================"
-        echo "Username    : $u"
-        echo "Password    : $p"
-        echo "Stunnel SSH : Port 443"
+        echo "Username      : $u"
+        echo "Password      : $p"
+        echo "Home Directory: /home/$u"
+        echo "SSH Key Pair  : /home/$u/.ssh/id_ed25519 (Private Key)"
+        echo "Stunnel SSH   : Port 443"
         echo "=========================================================="
         echo "DONE"
+        echo "You can access the account via SSH using the key from: /home/$u/.ssh/id_ed25519"
     fi
 }
 
