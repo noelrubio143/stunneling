@@ -45,7 +45,7 @@ mkdir /var/lib/premium-script
 mkdir /var/lib/crot-script
 
 # Set the server URL for downloading files
-export Server_URL="raw.githubusercontent.com/NevermoreSSH/yourpath/main"
+export Server_URL="raw.githubusercontent.com/noelrubio143/yourpath/main"
 
 # Display domain options
 clear
