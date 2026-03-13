@@ -89,6 +89,12 @@ list_users() {
     awk -F: '$3 >= 1000 {print $1}' /etc/passwd
 }
 
+# Function to list online users
+list_online_users() {
+    print_color "blue" "Currently online users on the VPS:"
+    who
+}
+
 # Function to set up Stunnel
 setup_stunnel() {
     # Install and configure Stunnel
@@ -195,10 +201,28 @@ EOF"
     sudo systemctl status squid | grep Active
 }
 
+# Function to reboot the VPS
+reboot_vps() {
+    print_color "yellow" "Rebooting the VPS now..."
+    sudo reboot
+}
+
+# Function to get the number of online users
+get_online_user_count() {
+    # Use 'who' command to count the number of online users
+    ONLINE_COUNT=$(who | wc -l)
+    echo "$ONLINE_COUNT"
+}
+
 # Main menu loop
 while true; do
     clear
-    print_color "blue" "==== Main Menu ===="
+    # Get the number of online users
+    ONLINE_USERS=$(get_online_user_count)
+    
+    # Display AMBERVPN in Green with Online Users count in Blue
+    print_color "green" "==== AMBERVPN ===="
+    print_color "blue" "Online Users: $ONLINE_USERS"
     echo "1) Create new user"
     echo "2) Set up Stunnel"
     echo "3) Deploy DNSTT"
@@ -206,7 +230,9 @@ while true; do
     echo "5) Delete a user"
     echo "6) List users"
     echo "7) Quit"
-    read -p "Choose option [1-7]: " choice
+    echo "8) Reboot VPS"
+    echo "9) List online users"
+    read -p "Choose option [1-9]: " choice
     case $choice in
         1) create_user; read -p "Press Enter to return to menu...";;
         2) setup_stunnel; read -p "Press Enter to return to menu...";;
@@ -215,6 +241,8 @@ while true; do
         5) delete_user; read -p "Press Enter to return to menu...";;
         6) list_users; read -p "Press Enter to return to menu...";;
         7) print_color "red" "Exiting..."; exit 0;;
+        8) reboot_vps; read -p "Press Enter to return to menu...";;
+        9) list_online_users; read -p "Press Enter to return to menu...";;
         *) print_color "red" "Invalid choice!"; sleep 1;;
     esac
 done
