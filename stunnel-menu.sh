@@ -16,12 +16,17 @@ function print_color {
 
 # Default Squid ports
 SQUID_PORTS="80, 8080, 8888"
+STUNNEL_PORT="443"
+SSH_PORT="22"
 BANNER_TEXT="==== AMBERVPN ===="  # Default banner
 
 # Function to get RAM and CPU core information
 get_system_info() {
-    RAM=$(free -h | grep Mem | awk '{print $2}')
+    RAM_TOTAL=$(free -h | grep Mem | awk '{print $2}')
+    RAM_USED=$(free -h | grep Mem | awk '{print $3}')
+    RAM_FREE=$(free -h | grep Mem | awk '{print $4}')
     CPU_CORES=$(nproc)
+    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
 }
 
 # Function to install stunnel if needed
@@ -109,7 +114,7 @@ setup_stunnel() {
     sudo bash -c "cat > /etc/stunnel/stunnel.conf <<EOF
 client = no
 [ssh]
-accept = 443
+accept = ${STUNNEL_PORT}
 connect = 22
 cert = /etc/stunnel/stunnel.pem
 EOF"
@@ -119,7 +124,7 @@ EOF"
         -subj "/CN=localhost"
     sudo systemctl enable stunnel4
     sudo systemctl restart stunnel4
-    print_color "green" "Stunnel SSH setup complete (port 443)."
+    print_color "green" "Stunnel SSH setup complete (port ${STUNNEL_PORT})."
 }
 
 # Function to deploy DNSTT using the updated script
@@ -226,11 +231,14 @@ while true; do
     get_system_info
     ONLINE_USERS=$(get_online_user_count)
     
-    # Display AMBERVPN in Green with System Info and Squid Ports in Blue
+    # Display AMBERVPN in Green with System Info, Squid Ports, and Usage in Blue
     print_color "green" "$BANNER_TEXT"
     print_color "blue" "System Info:"
-    echo "RAM: $RAM"
+    echo "RAM: $RAM_TOTAL (Used: $RAM_USED, Free: $RAM_FREE)"
     echo "CPU Cores: $CPU_CORES"
+    echo "CPU Usage: $CPU_USAGE%"
+    echo "SSH Port: $SSH_PORT"
+    echo "Stunnel Port: $STUNNEL_PORT"
     print_color "blue" "Squid Ports: $SQUID_PORTS"
     print_color "blue" "Online Users: $ONLINE_USERS"
     echo "1) Create new user"
