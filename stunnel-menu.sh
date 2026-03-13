@@ -1,8 +1,7 @@
 #!/bin/bash
 # ===============================================
-# AmberVPN VPS Management Script v2.1
-# Features: User Management, SSH/Squid, Stunnel, DNSTT, System Info
-# Squid is now configured to listen on port 80 only
+# AmberVPN VPS Management Script v2.5
+# Features: User Management, SSH/Squid, Stunnel, DNSTT, Live System Banner
 # ===============================================
 
 set -euo pipefail
@@ -32,22 +31,27 @@ function print_color {
 }
 
 # ---------------------------
-# Default Configuration
+# Global Config
 # ---------------------------
-SQUID_PORT=80
 SSH_PORT=22
+SQUID_PORT=80
+STUNNEL_PORT=""   # will be set after Stunnel setup
 BANNER_TEXT="==== AMBERVPN ===="
 LOG_FILE="/var/log/ambervpn.log"
 
 # ---------------------------
-# System Info
+# System Info Functions
 # ---------------------------
 function get_system_info() {
     RAM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
     RAM_USED=$(free -h | awk '/Mem:/ {print $3}')
     RAM_FREE=$(free -h | awk '/Mem:/ {print $4}')
     CPU_CORES=$(nproc)
-    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}')
+    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{printf "%.1f", 100 - $8}')
+}
+
+function get_online_user_count() {
+    who | wc -l
 }
 
 # ---------------------------
@@ -58,25 +62,53 @@ function log_action() {
 }
 
 # ---------------------------
+# Dynamic SSH Banner
+# ---------------------------
+function update_ssh_banner() {
+    get_system_info
+    VPS_IP=$(hostname -I | awk '{print $1}')
+    ONLINE_USERS=$(get_online_user_count)
+    STUNNEL_PORT_DISPLAY=${STUNNEL_PORT:-"Not set"}
+    SQUID_PORT_DISPLAY=${SQUID_PORT:-"Not set"}
+
+    new_banner="$BANNER_TEXT
+VPS IP: $VPS_IP
+SSH Port: $SSH_PORT
+Stunnel Port: $STUNNEL_PORT_DISPLAY
+Squid Port: $SQUID_PORT_DISPLAY
+CPU Cores: $CPU_CORES
+CPU Usage: $CPU_USAGE%
+RAM Total: $RAM_TOTAL
+RAM Used: $RAM_USED
+RAM Free: $RAM_FREE
+Online Users: $ONLINE_USERS"
+
+    echo "$new_banner" > /etc/issue
+    echo "$new_banner" > /etc/motd
+    sed -i 's|#Banner none|Banner /etc/issue|' /etc/ssh/sshd_config || true
+    systemctl restart ssh
+    print_color green "SSH banner updated with live VPS stats."
+    log_action "SSH banner updated with live VPS stats"
+}
+
+# ---------------------------
 # User Management
 # ---------------------------
 function create_user() {
     read -p "Enter new username: " u
     if [[ ! "$u" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-        print_color red "Invalid username. Use letters, numbers, ., _, or -"
+        print_color red "Invalid username."
         return
     fi
     if id "$u" &>/dev/null; then
         print_color red "User $u already exists!"
         return
     fi
-
     read -sp "Enter password for $u: " p; echo
     if [[ -z "$p" ]]; then
         print_color red "Password cannot be empty."
         return
     fi
-
     read -p "Enter expiration period in days (leave blank for no expiration): " exp_days
 
     useradd -m -s /bin/bash "$u"
@@ -97,6 +129,7 @@ function create_user() {
     echo "======================"
 
     log_action "Created user $u"
+    update_ssh_banner
 }
 
 function delete_user() {
@@ -105,6 +138,7 @@ function delete_user() {
         deluser --remove-home "$u"
         print_color green "User $u deleted."
         log_action "Deleted user $u"
+        update_ssh_banner
     else
         print_color red "User $u does not exist!"
     fi
@@ -120,51 +154,27 @@ function list_online_users() {
     who
 }
 
-function get_online_user_count() {
-    who | wc -l
-}
-
 # ---------------------------
-# SSH Banner
-# ---------------------------
-function update_ssh_banner() {
-    read -p "Enter new SSH banner text: " new_banner
-    new_banner=$(echo "$new_banner" | xargs)
-    if [[ -n "$new_banner" ]]; then
-        echo "$new_banner" > /etc/issue
-        echo "$new_banner" > /etc/motd
-        sed -i 's|#Banner none|Banner /etc/issue|' /etc/ssh/sshd_config || true
-        systemctl restart ssh
-        print_color green "SSH banner updated."
-        log_action "SSH banner updated"
-    else
-        print_color yellow "No banner entered. Banner unchanged."
-    fi
-}
-
-# ---------------------------
-# Stunnel Installer
+# Stunnel Setup
 # ---------------------------
 function setup_stunnel() {
-    read -p "Enter your VPS IP: " VPS_IP
-    read -p "Enter the port Stunnel will accept connections on (e.g., 443): " ACCEPT_PORT
-    read -p "Enter the local service port to tunnel (e.g., 22 for SSH): " CONNECT_PORT
+    read -p "Enter VPS IP: " VPS_IP
+    read -p "Enter Stunnel port (e.g., 443): " ACCEPT_PORT
+    read -p "Enter local service port to tunnel (e.g., 22): " CONNECT_PORT
 
-    print_color blue "Updating system packages..."
+    STUNNEL_PORT=$ACCEPT_PORT
+
+    print_color blue "Updating system..."
     apt update -y && apt upgrade -y
-
-    print_color blue "Installing stunnel4..."
     apt install -y stunnel4 openssl
 
     sed -i 's/ENABLED=0/ENABLED=1/' /etc/default/stunnel4
 
     SSL_FILE="/etc/stunnel/stunnel.pem"
     mkdir -p /etc/stunnel
-    print_color blue "Creating self-signed certificate..."
     openssl req -new -x509 -days 365 -nodes \
         -out "$SSL_FILE" -keyout "$SSL_FILE" \
         -subj "/C=PH/ST=Philippines/L=City/O=AmberVPN/OU=IT/CN=$VPS_IP"
-
     chmod 600 "$SSL_FILE"
 
     [ -f /etc/stunnel/stunnel.conf ] && mv /etc/stunnel/stunnel.conf /etc/stunnel/stunnel.conf.bak
@@ -182,17 +192,14 @@ EOL
     systemctl restart stunnel4
     systemctl enable stunnel4
 
-    print_color green "---------------------------------------------"
-    print_color green "Stunnel setup complete!"
-    print_color green "Listening on $VPS_IP:$ACCEPT_PORT -> local port $CONNECT_PORT"
-    print_color green "Certificate: $SSL_FILE (1 year)"
-    print_color green "---------------------------------------------"
-
+    print_color green "Stunnel setup complete on port $ACCEPT_PORT."
     log_action "Stunnel installed on $VPS_IP:$ACCEPT_PORT -> $CONNECT_PORT"
+
+    update_ssh_banner
 }
 
 # ---------------------------
-# SSH + Squid Installer (Port 80 only)
+# SSH + Squid Installation
 # ---------------------------
 function install_ssh_squid() {
     read -p "Allow remote Squid access? (y/N): " allow_remote
@@ -219,8 +226,10 @@ access_log /var/log/squid/access.log
 EOF
 
     systemctl restart squid
-    print_color green "SSH and Squid installed (Squid on port 80 only)."
+    print_color green "SSH and Squid installed (Squid on port $SQUID_PORT)."
     log_action "SSH and Squid installed"
+
+    update_ssh_banner
 }
 
 # ---------------------------
@@ -261,6 +270,7 @@ while true; do
     echo "CPU Usage: $CPU_USAGE%"
     echo "SSH Port: $SSH_PORT"
     print_color blue "Squid Port: $SQUID_PORT"
+    print_color blue "Stunnel Port: ${STUNNEL_PORT:-Not set}"
     print_color blue "Online Users: $ONLINE_USERS"
 
     echo "1) Create new user"
