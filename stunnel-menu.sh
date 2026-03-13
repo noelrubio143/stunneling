@@ -26,6 +26,7 @@ function print_color {
 
 # Default Squid port
 SQUID_PORT=8080
+BANNER_TEXT="==== AMBERVPN ===="  # Default banner
 
 # Function to install stunnel if needed
 install_stunnel() {
@@ -214,6 +215,25 @@ get_online_user_count() {
     echo "$ONLINE_COUNT"
 }
 
+# Function to update the SSH login banner
+update_ssh_banner() {
+    # Ask the user for the new banner text
+    echo "Enter the new SSH banner text:"
+    read -p "New banner text: " new_banner
+    if [ -n "$new_banner" ]; then
+        # Update /etc/issue (pre-login message)
+        echo "$new_banner" | sudo tee /etc/issue > /dev/null
+        # Update /etc/motd (post-login message)
+        echo "$new_banner" | sudo tee /etc/motd > /dev/null
+        # Make sure SSH shows the banner
+        sudo sed -i 's/#Banner none/Banner \/etc\/motd/' /etc/ssh/sshd_config
+        sudo systemctl restart ssh
+        print_color "green" "SSH banner updated successfully!"
+    else
+        print_color "yellow" "No banner text entered. Banner remains unchanged."
+    fi
+}
+
 # Main menu loop
 while true; do
     clear
@@ -221,7 +241,7 @@ while true; do
     ONLINE_USERS=$(get_online_user_count)
     
     # Display AMBERVPN in Green with Online Users count in Blue
-    print_color "green" "==== AMBERVPN ===="
+    print_color "green" "$BANNER_TEXT"
     print_color "blue" "Online Users: $ONLINE_USERS"
     echo "1) Create new user"
     echo "2) Set up Stunnel"
@@ -229,20 +249,22 @@ while true; do
     echo "4) Install SSH and Squid Proxy"
     echo "5) Delete a user"
     echo "6) List users"
-    echo "7) Quit"
-    echo "8) Reboot VPS"
-    echo "9) List online users"
-    read -p "Choose option [1-9]: " choice
+    echo "7) Reboot VPS"
+    echo "8) List online users"
+    echo "9) Edit SSH Banner"
+    echo "0) Quit"
+    read -p "Choose option [0-9]: " choice
     case $choice in
+        0) print_color "red" "Exiting..."; exit 0;;
         1) create_user; read -p "Press Enter to return to menu...";;
         2) setup_stunnel; read -p "Press Enter to return to menu...";;
         3) deploy_dnstt; read -p "Press Enter to return to menu...";;
         4) install_ssh_squid; read -p "Press Enter to return to menu...";;
         5) delete_user; read -p "Press Enter to return to menu...";;
         6) list_users; read -p "Press Enter to return to menu...";;
-        7) print_color "red" "Exiting..."; exit 0;;
-        8) reboot_vps; read -p "Press Enter to return to menu...";;
-        9) list_online_users; read -p "Press Enter to return to menu...";;
+        7) reboot_vps; read -p "Press Enter to return to menu...";;
+        8) list_online_users; read -p "Press Enter to return to menu...";;
+        9) update_ssh_banner; read -p "Press Enter to return to menu...";;
         *) print_color "red" "Invalid choice!"; sleep 1;;
     esac
 done
