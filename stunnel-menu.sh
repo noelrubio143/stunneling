@@ -1,11 +1,23 @@
 #!/bin/bash
 # ===============================================
-# AmberVPN VPS Management Script with Stunnel Installer
+# AmberVPN VPS Management Script v2.1
+# Features: User Management, SSH/Squid, Stunnel, DNSTT, System Info
+# Squid is now configured to listen on port 80 only
 # ===============================================
 
-set -e
+set -euo pipefail
 
+# ---------------------------
+# Root Check
+# ---------------------------
+if [[ $EUID -ne 0 ]]; then
+    echo -e "\033[0;31m[ERROR] This script must be run as root.\033[0m"
+    exit 1
+fi
+
+# ---------------------------
 # Colors for output
+# ---------------------------
 function print_color {
     local COLOR=$1
     local MESSAGE=$2
@@ -19,8 +31,10 @@ function print_color {
     esac
 }
 
-# Default configuration
-SQUID_PORTS="80,8080,8888"
+# ---------------------------
+# Default Configuration
+# ---------------------------
+SQUID_PORT=80
 SSH_PORT=22
 BANNER_TEXT="==== AMBERVPN ===="
 LOG_FILE="/var/log/ambervpn.log"
@@ -37,7 +51,7 @@ function get_system_info() {
 }
 
 # ---------------------------
-# Logging Function
+# Logging
 # ---------------------------
 function log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
@@ -65,13 +79,13 @@ function create_user() {
 
     read -p "Enter expiration period in days (leave blank for no expiration): " exp_days
 
-    sudo useradd -m -s /bin/bash "$u"
-    echo "$u:$p" | sudo chpasswd
+    useradd -m -s /bin/bash "$u"
+    echo "$u:$p" | chpasswd
     print_color green "User $u created."
 
     if [[ -n "$exp_days" && "$exp_days" =~ ^[0-9]+$ ]]; then
         expiration_date=$(date -d "+$exp_days days" '+%Y-%m-%d')
-        sudo chage -E "$expiration_date" "$u"
+        chage -E "$expiration_date" "$u"
         print_color yellow "Account $u will expire on $expiration_date."
     fi
 
@@ -88,7 +102,7 @@ function create_user() {
 function delete_user() {
     read -p "Enter username to delete: " u
     if id "$u" &>/dev/null; then
-        sudo deluser --remove-home "$u"
+        deluser --remove-home "$u"
         print_color green "User $u deleted."
         log_action "Deleted user $u"
     else
@@ -111,30 +125,27 @@ function get_online_user_count() {
 }
 
 # ---------------------------
-# SSH Banner Update
+# SSH Banner
 # ---------------------------
 function update_ssh_banner() {
     read -p "Enter new SSH banner text: " new_banner
     new_banner=$(echo "$new_banner" | xargs)
     if [[ -n "$new_banner" ]]; then
-        echo "$new_banner" | sudo tee /etc/issue /etc/motd >/dev/null
-        sudo sed -i 's|#Banner none|Banner /etc/motd|' /etc/ssh/sshd_config
-        sudo systemctl restart ssh
+        echo "$new_banner" > /etc/issue
+        echo "$new_banner" > /etc/motd
+        sed -i 's|#Banner none|Banner /etc/issue|' /etc/ssh/sshd_config || true
+        systemctl restart ssh
         print_color green "SSH banner updated."
+        log_action "SSH banner updated"
     else
         print_color yellow "No banner entered. Banner unchanged."
     fi
 }
 
 # ---------------------------
-# Stunnel Installer (IP-bound)
+# Stunnel Installer
 # ---------------------------
 function setup_stunnel() {
-    if [ "$EUID" -ne 0 ]; then
-        print_color red "Please run as root to setup Stunnel."
-        return
-    fi
-
     read -p "Enter your VPS IP: " VPS_IP
     read -p "Enter the port Stunnel will accept connections on (e.g., 443): " ACCEPT_PORT
     read -p "Enter the local service port to tunnel (e.g., 22 for SSH): " CONNECT_PORT
@@ -143,23 +154,20 @@ function setup_stunnel() {
     apt update -y && apt upgrade -y
 
     print_color blue "Installing stunnel4..."
-    apt install -y stunnel4
+    apt install -y stunnel4 openssl
 
     sed -i 's/ENABLED=0/ENABLED=1/' /etc/default/stunnel4
 
     SSL_FILE="/etc/stunnel/stunnel.pem"
     mkdir -p /etc/stunnel
-    print_color blue "Creating self-signed certificate for IP $VPS_IP..."
+    print_color blue "Creating self-signed certificate..."
     openssl req -new -x509 -days 365 -nodes \
-      -out "$SSL_FILE" \
-      -keyout "$SSL_FILE" \
-      -subj "/C=PH/ST=Philippines/L=City/O=MyCompany/OU=IT/CN=$VPS_IP"
+        -out "$SSL_FILE" -keyout "$SSL_FILE" \
+        -subj "/C=PH/ST=Philippines/L=City/O=AmberVPN/OU=IT/CN=$VPS_IP"
 
     chmod 600 "$SSL_FILE"
 
-    if [ -f /etc/stunnel/stunnel.conf ]; then
-        mv /etc/stunnel/stunnel.conf /etc/stunnel/stunnel.conf.bak
-    fi
+    [ -f /etc/stunnel/stunnel.conf ] && mv /etc/stunnel/stunnel.conf /etc/stunnel/stunnel.conf.bak
 
     cat <<EOL > /etc/stunnel/stunnel.conf
 cert = $SSL_FILE
@@ -177,44 +185,53 @@ EOL
     print_color green "---------------------------------------------"
     print_color green "Stunnel setup complete!"
     print_color green "Listening on $VPS_IP:$ACCEPT_PORT -> local port $CONNECT_PORT"
-    print_color green "Certificate stored at $SSL_FILE (valid 1 year)"
+    print_color green "Certificate: $SSL_FILE (1 year)"
     print_color green "---------------------------------------------"
 
     log_action "Stunnel installed on $VPS_IP:$ACCEPT_PORT -> $CONNECT_PORT"
 }
 
 # ---------------------------
-# SSH + Squid Installation
+# SSH + Squid Installer (Port 80 only)
 # ---------------------------
 function install_ssh_squid() {
-    sudo apt update
-    sudo apt install -y openssh-server squid || { print_color red "Failed to install SSH or Squid"; return; }
+    read -p "Allow remote Squid access? (y/N): " allow_remote
+    apt update -y
+    apt install -y openssh-server squid
 
-    sudo systemctl enable ssh squid
-    sudo systemctl restart ssh squid
+    systemctl enable ssh squid
+    systemctl restart ssh squid
 
-    sudo cp /etc/squid/squid.conf /etc/squid/squid.conf.backup
-    sudo bash -c "cat > /etc/squid/squid.conf <<EOF
-http_port 80
-http_port 8080
-http_port 8888
-acl localnet src 127.0.0.1/32
+    cp /etc/squid/squid.conf /etc/squid/squid.conf.backup
+
+    if [[ "$allow_remote" =~ ^[Yy]$ ]]; then
+        ACL_LINE="acl localnet src 0.0.0.0/0"
+    else
+        ACL_LINE="acl localnet src 127.0.0.1/32"
+    fi
+
+    cat <<EOF > /etc/squid/squid.conf
+http_port $SQUID_PORT
+$ACL_LINE
 http_access allow localnet
 http_access deny all
 access_log /var/log/squid/access.log
-EOF"
+EOF
 
-    sudo systemctl restart squid
-    print_color green "SSH and Squid installed."
+    systemctl restart squid
+    print_color green "SSH and Squid installed (Squid on port 80 only)."
     log_action "SSH and Squid installed"
 }
 
 # ---------------------------
-# DNSTT Deployment (Safe)
+# DNSTT Deployment
 # ---------------------------
 function deploy_dnstt() {
     TMP_SCRIPT=$(mktemp)
-    curl -Ls -o "$TMP_SCRIPT" https://raw.githubusercontent.com/noelrubio143/stunneling/refs/heads/main/dnstt
+    curl -Ls -o "$TMP_SCRIPT" https://raw.githubusercontent.com/noelrubio143/stunneling/refs/heads/main/dnstt || {
+        print_color red "Failed to download DNSTT script."
+        return
+    }
     chmod +x "$TMP_SCRIPT"
     bash "$TMP_SCRIPT"
     rm -f "$TMP_SCRIPT"
@@ -226,7 +243,7 @@ function deploy_dnstt() {
 # ---------------------------
 function reboot_vps() {
     print_color yellow "Rebooting VPS..."
-    sudo reboot
+    reboot
 }
 
 # ---------------------------
@@ -243,7 +260,7 @@ while true; do
     echo "CPU Cores: $CPU_CORES"
     echo "CPU Usage: $CPU_USAGE%"
     echo "SSH Port: $SSH_PORT"
-    print_color blue "Squid Ports: $SQUID_PORTS"
+    print_color blue "Squid Port: $SQUID_PORT"
     print_color blue "Online Users: $ONLINE_USERS"
 
     echo "1) Create new user"
