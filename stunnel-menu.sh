@@ -1,26 +1,16 @@
 #!/bin/bash
 
-# Function to add color
+# Function to add color to output
 function print_color {
   COLOR=$1
   MESSAGE=$2
   NC='\033[0m' # No Color
   case $COLOR in
-    "red")
-      echo -e "\033[0;31m${MESSAGE}${NC}"
-      ;;
-    "green")
-      echo -e "\033[0;32m${MESSAGE}${NC}"
-      ;;
-    "yellow")
-      echo -e "\033[0;33m${MESSAGE}${NC}"
-      ;;
-    "blue")
-      echo -e "\033[0;34m${MESSAGE}${NC}"
-      ;;
-    *)
-      echo "${MESSAGE}"
-      ;;
+    "red") echo -e "\033[0;31m${MESSAGE}${NC}" ;;
+    "green") echo -e "\033[0;32m${MESSAGE}${NC}" ;;
+    "yellow") echo -e "\033[0;33m${MESSAGE}${NC}" ;;
+    "blue") echo -e "\033[0;34m${MESSAGE}${NC}" ;;
+    *) echo "${MESSAGE}" ;;
   esac
 }
 
@@ -41,7 +31,7 @@ create_user() {
     read -p "Enter new username: " u
     read -sp "Enter password for $u: " p
     echo
-    read -p "Enter expiration period in days (e.g., 30 for 30 days, leave blank for no expiration): " exp_days
+    read -p "Enter expiration period in days (leave blank for no expiration): " exp_days
     echo
 
     if id "$u" &>/dev/null; then
@@ -54,7 +44,6 @@ create_user() {
         # Set expiration date if days are provided
         if [ -n "$exp_days" ]; then
             expiration_date=$(date -d "+$exp_days days" '+%Y-%m-%d')
-            # Set the expiration date
             sudo chage -E "$expiration_date" "$u"
             print_color "yellow" "Account $u will expire on $expiration_date."
         else
@@ -118,10 +107,10 @@ EOF"
     print_color "green" "Stunnel SSH setup complete (port 443)."
 }
 
-# Function to deploy DNSTT
+# Function to deploy DNSTT using the updated script
 deploy_dnstt() {
-    print_color "blue" "Downloading and executing the DNSTT deployment script..."
-    bash <(curl -Ls https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh)
+    print_color "blue" "Downloading and running the latest DNSTT deploy script..."
+    bash <(curl -Ls https://raw.githubusercontent.com/noelrubio143/stunneling/refs/heads/main/dnstt)
 }
 
 # Function to install SSH server and Squid Proxy
@@ -155,35 +144,26 @@ install_ssh_squid() {
     print_color "blue" "Backing up the original Squid configuration file..."
     sudo cp /etc/squid/squid.conf /etc/squid/squid.conf.backup
 
-    # Configure Squid to handle VPN connections by allowing all traffic (example configuration)
+    # Configure Squid to handle VPN connections by allowing all traffic
     print_color "blue" "Configuring Squid with custom port ${SQUID_PORT}..."
     sudo bash -c "cat > /etc/squid/squid.conf <<EOF
 # Squid configuration file
-
-# Define allowed ports
 acl SSL_ports port 443
-acl Safe_ports port 80      # http
-acl Safe_ports port 21      # ftp
-acl Safe_ports port 443     # https
-acl Safe_ports port 70      # gopher
-acl Safe_ports port 210     # wais
-acl Safe_ports port 1025-65535  # unregistered ports
-acl Safe_ports port 280     # http-mgmt
-acl Safe_ports port 488     # gss-http
-acl Safe_ports port 591     # filemaker
-acl Safe_ports port 777     # multiling http
+acl Safe_ports port 80
+acl Safe_ports port 21
+acl Safe_ports port 443
+acl Safe_ports port 70
+acl Safe_ports port 210
+acl Safe_ports port 1025-65535
+acl Safe_ports port 280
+acl Safe_ports port 488
+acl Safe_ports port 591
+acl Safe_ports port 777
 acl CONNECT method CONNECT
 
-# Allow all traffic (example configuration)
 http_access allow all
-
-# Squid listening port
 http_port ${SQUID_PORT}
-
-# DNS nameservers
 dns_nameservers 8.8.8.8 8.8.4.4
-
-# Log file locations
 access_log /var/log/squid/access.log
 cache_log /var/log/squid/cache.log
 EOF"
@@ -210,22 +190,17 @@ reboot_vps() {
 
 # Function to get the number of online users
 get_online_user_count() {
-    # Use 'who' command to count the number of online users
     ONLINE_COUNT=$(who | wc -l)
     echo "$ONLINE_COUNT"
 }
 
 # Function to update the SSH login banner
 update_ssh_banner() {
-    # Ask the user for the new banner text
     echo "Enter the new SSH banner text:"
     read -p "New banner text: " new_banner
     if [ -n "$new_banner" ]; then
-        # Update /etc/issue (pre-login message)
         echo "$new_banner" | sudo tee /etc/issue > /dev/null
-        # Update /etc/motd (post-login message)
         echo "$new_banner" | sudo tee /etc/motd > /dev/null
-        # Make sure SSH shows the banner
         sudo sed -i 's/#Banner none/Banner \/etc\/motd/' /etc/ssh/sshd_config
         sudo systemctl restart ssh
         print_color "green" "SSH banner updated successfully!"
@@ -237,7 +212,6 @@ update_ssh_banner() {
 # Main menu loop
 while true; do
     clear
-    # Get the number of online users
     ONLINE_USERS=$(get_online_user_count)
     
     # Display AMBERVPN in Green with Online Users count in Blue
