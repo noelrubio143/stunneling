@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─── Slipstream + Dante SOCKS Setup ───
-# One-liner: curl -sSL https://raw.githubusercontent.com/dnstt-xyz/slipstream-socks-deploy/main/install.sh | bash -s -- --domain t.example.com
+# One-liner: curl -sSL https://raw.githubusercontent.com/noelrubio143/stunneling/refs/heads/main/lipstream | bash -s -- --domain t.example.com
 # Or: wget -qO- ... | bash -s -- --domain t.example.com
 
 RED='\033[0;31m'
