@@ -34,7 +34,7 @@ function print_color {
 # Global Config
 # ---------------------------
 SSH_PORT=22
-SQUID_PORT=80
+SQUID_PORT=8080
 STUNNEL_PORT=""   # will be set after Stunnel setup
 BANNER_TEXT="==== AMBERVPN ===="
 LOG_FILE="/var/log/ambervpn.log"
